@@ -1,0 +1,417 @@
+# GitLab CI/CD Template for KubeGuard Sentinel
+# Author: Tyler Joyner (joynertyler75@gmail.com)
+# 
+# This template provides automated Kubernetes security scanning in GitLab pipelines
+# with Terraform infrastructure deployment and Sentinel policy enforcement
+
+# Include this in your .gitlab-ci.yml:
+# include:
+#   - project: 'joynerty/kubeguard-sentinel'
+#     file: '/deployments/gitlab-ci/kubeguard-template.yml'
+
+variables:
+  # KubeGuard Configuration
+  KUBEGUARD_VERSION: "1.0.0"
+  SCAN_PROFILE: "standard"  # safe | standard | aggressive
+  FAIL_ON_CRITICAL: "true"
+  FAIL_ON_HIGH: "false"
+  
+  # Kubernetes Configuration
+  KUBE_CONTEXT: ""  # Set in CI/CD variables
+  KUBE_NAMESPACE: "kubeguard-system"
+  
+  # Terraform Configuration
+  TF_ROOT: "${CI_PROJECT_DIR}/deployments/terraform"
+  TF_STATE_NAME: "kubeguard-${CI_ENVIRONMENT_NAME}"
+  
+  # Sentinel Configuration
+  SENTINEL_ENFORCE_LEVEL: "soft-mandatory"  # advisory | soft-mandatory | hard-mandatory
+
+stages:
+  - validate
+  - plan
+  - deploy
+  - scan
+  - report
+  - cleanup
+
+# ============================================================================
+# STAGE 1: VALIDATE - Terraform and Sentinel Policy Validation
+# ============================================================================
+
+terraform:validate:
+  stage: validate
+  image: hashicorp/terraform:1.6
+  script:
+    - cd ${TF_ROOT}
+    - terraform init -backend=false
+    - terraform validate
+    - terraform fmt -check -recursive
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+sentinel:validate:
+  stage: validate
+  image: hashicorp/sentinel:latest
+  script:
+    - cd ${TF_ROOT}/modules/sentinel
+    - |
+      echo "Validating Sentinel policies..."
+      for policy in policies/*.sentinel; do
+        echo "Checking $policy..."
+        sentinel test -run=$(basename $policy .sentinel)
+      done
+    - echo "✅ All Sentinel policies validated"
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# ============================================================================
+# STAGE 2: PLAN - Terraform Plan with Sentinel Policy Checks
+# ============================================================================
+
+terraform:plan:
+  stage: plan
+  image: hashicorp/terraform:1.6
+  before_script:
+    - apk add --no-cache curl jq
+  script:
+    - cd ${TF_ROOT}
+    
+    # Initialize Terraform
+    - terraform init
+    
+    # Create Terraform plan
+    - terraform plan -out=plan.tfplan
+    - terraform show -json plan.tfplan > plan.json
+    
+    # Run Sentinel policy checks
+    - |
+      echo "Running Sentinel policy checks..."
+      if [ -d "modules/sentinel/policies" ]; then
+        for policy in modules/sentinel/policies/*.sentinel; do
+          policy_name=$(basename $policy .sentinel)
+          echo "Evaluating policy: $policy_name"
+          
+          # This would use Terraform Cloud/Enterprise Sentinel integration
+          # For standalone, we simulate with exit codes
+          sentinel apply -config=modules/sentinel/sentinel.hcl $policy
+        done
+      fi
+    
+    # Generate plan summary
+    - terraform show plan.tfplan | tee plan_summary.txt
+    
+  artifacts:
+    paths:
+      - ${TF_ROOT}/plan.tfplan
+      - ${TF_ROOT}/plan.json
+      - ${TF_ROOT}/plan_summary.txt
+    expire_in: 1 week
+    reports:
+      terraform: ${TF_ROOT}/plan.json
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+  dependencies:
+    - terraform:validate
+    - sentinel:validate
+
+# ============================================================================
+# STAGE 3: DEPLOY - Apply Terraform and Deploy KubeGuard
+# ============================================================================
+
+terraform:apply:
+  stage: deploy
+  image: hashicorp/terraform:1.6
+  script:
+    - cd ${TF_ROOT}
+    - terraform init
+    - terraform apply -auto-approve plan.tfplan
+    
+    # Extract outputs
+    - terraform output -json > terraform_outputs.json
+    - cat terraform_outputs.json
+    
+    # Wait for KubeGuard pods to be ready
+    - |
+      if command -v kubectl &> /dev/null; then
+        echo "Waiting for KubeGuard deployment..."
+        kubectl wait --for=condition=ready pod \
+          -l app=kubeguard-sentinel \
+          -n ${KUBE_NAMESPACE} \
+          --timeout=300s
+      fi
+  artifacts:
+    paths:
+      - ${TF_ROOT}/terraform_outputs.json
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+  dependencies:
+    - terraform:plan
+  environment:
+    name: $CI_ENVIRONMENT_NAME
+    action: start
+
+# ============================================================================
+# STAGE 4: SCAN - Run Security Scans
+# ============================================================================
+
+.kubeguard-scan:
+  stage: scan
+  image: 
+    name: bitnami/kubectl:latest
+    entrypoint: [""]
+  before_script:
+    # Configure kubectl
+    - kubectl config use-context ${KUBE_CONTEXT}
+    - kubectl cluster-info
+  script:
+    # Create scan authorization
+    - |
+      cat <<EOF | kubectl apply -f -
+      apiVersion: kubeguard.io/v1alpha1
+      kind: ScanAuthorization
+      metadata:
+        name: gitlab-ci-auth-${CI_PIPELINE_ID}
+        namespace: ${KUBE_NAMESPACE}
+      spec:
+        authorizedBy: "${GITLAB_USER_EMAIL}"
+        approvalTicket: "GITLAB-CI-${CI_PIPELINE_ID}"
+        validUntil: "$(date -u -d '+24 hours' +%Y-%m-%dT%H:%M:%SZ)"
+        scope:
+          namespaces: ${SCAN_NAMESPACES}
+          maxRiskProfile: ${SCAN_PROFILE}
+      EOF
+    
+    # Create and run scan
+    - |
+      cat <<EOF | kubectl apply -f -
+      apiVersion: kubeguard.io/v1alpha1
+      kind: SecurityScan
+      metadata:
+        name: gitlab-scan-${CI_PIPELINE_ID}
+        namespace: ${KUBE_NAMESPACE}
+      spec:
+        authorizationRef: gitlab-ci-auth-${CI_PIPELINE_ID}
+        profile: ${SCAN_PROFILE}
+        tests:
+          - all
+        reporting:
+          format:
+            - json
+            - sarif
+          severity: low
+      EOF
+    
+    # Wait for scan completion
+    - |
+      echo "Waiting for scan to complete..."
+      kubectl wait --for=condition=Complete \
+        securityscan/gitlab-scan-${CI_PIPELINE_ID} \
+        -n ${KUBE_NAMESPACE} \
+        --timeout=30m || true
+    
+    # Get scan results
+    - kubectl get securityscan gitlab-scan-${CI_PIPELINE_ID} -n ${KUBE_NAMESPACE} -o yaml > scan-status.yaml
+    
+    # Extract results
+    - |
+      POD=$(kubectl get pod -n ${KUBE_NAMESPACE} -l app=kubeguard-sentinel -o jsonpath='{.items[0].metadata.name}')
+      kubectl cp ${KUBE_NAMESPACE}/${POD}:/results/scan-results.json ./scan-results.json || echo "Failed to copy JSON"
+      kubectl cp ${KUBE_NAMESPACE}/${POD}:/results/scan-results.sarif ./gl-sast-report.json || echo "Failed to copy SARIF"
+      kubectl cp ${KUBE_NAMESPACE}/${POD}:/results/scan-results.html ./scan-results.html || echo "Failed to copy HTML"
+    
+    # Parse results and check thresholds
+    - |
+      if [ -f scan-results.json ]; then
+        CRITICAL=$(jq -r '.Critical // 0' scan-results.json)
+        HIGH=$(jq -r '.High // 0' scan-results.json)
+        RISK_SCORE=$(jq -r '.OverallScore // 0' scan-results.json)
+        
+        echo "========================================"
+        echo "Security Scan Results"
+        echo "========================================"
+        echo "Critical Findings: $CRITICAL"
+        echo "High Findings: $HIGH"
+        echo "Risk Score: $RISK_SCORE/10.0"
+        echo "========================================"
+        
+        # Fail pipeline based on thresholds
+        if [ "$FAIL_ON_CRITICAL" = "true" ] && [ "$CRITICAL" -gt 0 ]; then
+          echo "❌ Pipeline failed: Critical findings detected"
+          exit 1
+        fi
+        
+        if [ "$FAIL_ON_HIGH" = "true" ] && [ "$HIGH" -gt 0 ]; then
+          echo "❌ Pipeline failed: High severity findings detected"
+          exit 1
+        fi
+        
+        echo "✅ Security scan passed thresholds"
+      else
+        echo "⚠️  No scan results found"
+        exit 1
+      fi
+  artifacts:
+    when: always
+    paths:
+      - scan-results.json
+      - scan-results.html
+      - scan-status.yaml
+    reports:
+      sast: gl-sast-report.json
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+# Production scan job
+k8s:security-scan:production:
+  extends: .kubeguard-scan
+  variables:
+    SCAN_NAMESPACES: '["production"]'
+    KUBE_CONTEXT: ${KUBE_CONTEXT_PRODUCTION}
+  environment:
+    name: production
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+# Staging scan job
+k8s:security-scan:staging:
+  extends: .kubeguard-scan
+  variables:
+    SCAN_NAMESPACES: '["staging"]'
+    KUBE_CONTEXT: ${KUBE_CONTEXT_STAGING}
+  environment:
+    name: staging
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == "develop"'
+
+# ============================================================================
+# STAGE 5: REPORT - Generate and Publish Reports
+# ============================================================================
+
+report:security:
+  stage: report
+  image: alpine:latest
+  before_script:
+    - apk add --no-cache jq curl
+  script:
+    - |
+      if [ -f scan-results.json ]; then
+        # Generate markdown report for MR comment
+        cat > security-report.md <<EOF
+      ## 🛡️ KubeGuard Security Scan Results
+      
+      **Pipeline:** [#${CI_PIPELINE_ID}](${CI_PIPELINE_URL})
+      **Branch:** \`${CI_COMMIT_BRANCH}\`
+      **Commit:** \`${CI_COMMIT_SHORT_SHA}\`
+      
+      ### Summary
+      
+      | Metric | Value |
+      |--------|-------|
+      | Critical Findings | $(jq -r '.Critical // 0' scan-results.json) 🔴 |
+      | High Findings | $(jq -r '.High // 0' scan-results.json) 🟠 |
+      | Medium Findings | $(jq -r '.Medium // 0' scan-results.json) 🟡 |
+      | Low Findings | $(jq -r '.Low // 0' scan-results.json) 🟢 |
+      | Overall Risk Score | $(jq -r '.OverallScore // 0' scan-results.json)/10.0 |
+      | Risk Level | $(jq -r '.RiskLevel // "UNKNOWN"' scan-results.json) |
+      
+      ### Compliance Scores
+      
+      | Framework | Score |
+      |-----------|-------|
+      | CIS Kubernetes | $(jq -r '.ComplianceScore.cisKubernetes // 0' scan-results.json)% |
+      | PCI-DSS | $(jq -r '.ComplianceScore.pciDss // 0' scan-results.json)% |
+      | NIST 800-190 | $(jq -r '.ComplianceScore.nist // 0' scan-results.json)% |
+      | SOC 2 | $(jq -r '.ComplianceScore.soc2 // 0' scan-results.json)% |
+      
+      ### Top Findings
+      
+      $(jq -r '.Findings[:3] | .[] | "- **" + .Severity + ":** " + .Title' scan-results.json)
+      
+      📊 [View Full HTML Report](${CI_JOB_URL}/artifacts/file/scan-results.html)
+      
+      ---
+      *Scan performed by [KubeGuard Sentinel](https://github.com/joynerty/kubeguard-sentinel)*
+      EOF
+        
+        cat security-report.md
+        
+        # Post to merge request (if applicable)
+        if [ -n "$CI_MERGE_REQUEST_IID" ]; then
+          curl --request POST \
+            --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+            --data-urlencode "body@security-report.md" \
+            "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/merge_requests/${CI_MERGE_REQUEST_IID}/notes"
+        fi
+      fi
+  artifacts:
+    paths:
+      - security-report.md
+    expire_in: 30 days
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+  dependencies:
+    - k8s:security-scan:production
+    - k8s:security-scan:staging
+
+# ============================================================================
+# STAGE 6: CLEANUP - Remove Scan Resources
+# ============================================================================
+
+cleanup:scans:
+  stage: cleanup
+  image: bitnami/kubectl:latest
+  script:
+    - kubectl config use-context ${KUBE_CONTEXT}
+    - |
+      # Delete scan and authorization
+      kubectl delete securityscan gitlab-scan-${CI_PIPELINE_ID} -n ${KUBE_NAMESPACE} --ignore-not-found=true
+      kubectl delete scanauthorization gitlab-ci-auth-${CI_PIPELINE_ID} -n ${KUBE_NAMESPACE} --ignore-not-found=true
+      
+      # Clean up old scans (keep last 10)
+      kubectl get securityscan -n ${KUBE_NAMESPACE} -o json | \
+        jq -r '.items | sort_by(.metadata.creationTimestamp) | reverse | .[10:] | .[] | .metadata.name' | \
+        xargs -r kubectl delete securityscan -n ${KUBE_NAMESPACE}
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: always
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+  dependencies: []
+
+# ============================================================================
+# Manual Jobs
+# ============================================================================
+
+terraform:destroy:
+  stage: cleanup
+  image: hashicorp/terraform:1.6
+  script:
+    - cd ${TF_ROOT}
+    - terraform init
+    - terraform destroy -auto-approve
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+  environment:
+    name: $CI_ENVIRONMENT_NAME
+    action: stop
+
+# Ad-hoc security scan
+scan:manual:
+  extends: .kubeguard-scan
+  variables:
+    SCAN_NAMESPACES: '["default"]'
+    SCAN_PROFILE: "safe"
+  rules:
+    - when: manual
+  allow_failure: true

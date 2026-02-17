@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>KubeGuard Sentinel - Interactive Security Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-primary: #0d1117;
+            --bg-secondary: #161b22;
+            --bg-tertiary: #21262d;
+            --accent-primary: #58a6ff;
+            --accent-success: #3fb950;
+            --accent-warning: #d29922;
+            --accent-danger: #f85149;
+            --text-primary: #c9d1d9;
+            --text-secondary: #8b949e;
+            --text-muted: #6e7681;
+            --border-primary: #30363d;
+            --border-accent: #58a6ff33;
+        }
+
+        body {
+            font-family: 'IBM Plex Mono', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+
+        /* Animated background grid */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+                linear-gradient(rgba(88, 166, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(88, 166, 255, 0.03) 1px, transparent 1px);
+            background-size: 50px 50px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* Header */
+        header {
+            margin-bottom: 3rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .branding {
+            display: flex;
+            align-items: center;
+            gap: 1.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .logo {
+            width: 60px;
+            height: 60px;
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-success));
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--bg-primary);
+            box-shadow: 0 0 40px rgba(88, 166, 255, 0.3);
+        }
+
+        .title-group h1 {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 32px;
+            font-weight: 700;
+            color: var(--text-primary);
+            margin-bottom: 4px;
+        }
+
+        .subtitle {
+            font-size: 14px;
+            color: var(--text-secondary);
+            font-weight: 400;
+        }
+
+        .info-banner {
+            background: linear-gradient(135deg, rgba(88, 166, 255, 0.1), rgba(63, 185, 80, 0.1));
+            border: 1px solid var(--border-accent);
+            border-radius: 12px;
+            padding: 1.5rem;
+            margin-top: 1.5rem;
+        }
+
+        .info-banner h3 {
+            font-size: 16px;
+            margin-bottom: 0.75rem;
+            color: var(--accent-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .info-banner p {
+            font-size: 13px;
+            line-height: 1.8;
+            color: var(--text-secondary);
+        }
+
+        .info-banner strong {
+            color: var(--text-primary);
+        }
+
+        /* Section Headers */
+        .section-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 1.5rem;
+            padding-bottom: 0.75rem;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .section-title {
+            font-family: 'Space Grotesk', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text-primary);
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .help-icon {
+            width: 20px;
+            height: 20px;
+            background: var(--bg-tertiary);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            color: var(--accent-primary);
+            cursor: help;
+            border: 1px solid var(--border-primary);
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 3rem;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
+        }
+
+        .stat-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, 
+                transparent, 
+                var(--accent-primary), 
+                transparent
+            );
+            animation: shimmer 3s linear infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .stat-card:hover {
+            transform: translateY(-4px);
+            border-color: var(--accent-primary);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+        }
+
+        .stat-label {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            margin-bottom: 0.75rem;
+            font-weight: 600;
+        }
+
+        .stat-value {
+            font-size: 48px;
+            font-weight: 700;
+            font-family: 'Space Grotesk', sans-serif;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+
+        .stat-description {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+        }
+
+        .stat-trend {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+            font-size: 11px;
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            margin-top: 0.5rem;
+        }
+
+        .trend-up {
+            background: rgba(248, 81, 73, 0.1);
+            color: var(--accent-danger);
+        }
+
+        .trend-down {
+            background: rgba(63, 185, 80, 0.1);
+            color: var(--accent-success);
+        }
+
+        /* Main Content Grid */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1.5fr 1fr;
+            gap: 2rem;
+            margin-bottom: 2rem;
+        }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-primary);
+            border-radius: 12px;
+            padding: 2rem;
+        }
+
+        /* Findings List */
+        .findings-list {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .finding-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            padding: 1.25rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            position: relative;
+        }
+
+        .finding-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 4px;
+            border-radius: 8px 0 0 8px;
+        }
+
+        .finding-item.critical::before { background: var(--accent-danger); }
+        .finding-item.high::before { background: var(--accent-warning); }
+        .finding-item.medium::before { background: var(--accent-primary); }
+        .finding-item.low::before { background: var(--accent-success); }
+
+        .finding-item:hover {
+            border-color: var(--accent-primary);
+            transform: translateX(4px);
+        }
+
+        .finding-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+            margin-bottom: 0.75rem;
+            gap: 1rem;
+        }
+
+        .finding-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: var(--text-primary);
+            line-height: 1.4;
+        }
+
+        .severity-badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 6px;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            white-space: nowrap;
+        }
+
+        .severity-critical {
+            background: rgba(248, 81, 73, 0.2);
+            color: var(--accent-danger);
+            border: 1px solid var(--accent-danger);
+        }
+
+        .severity-high {
+            background: rgba(210, 153, 34, 0.2);
+            color: var(--accent-warning);
+            border: 1px solid var(--accent-warning);
+        }
+
+        .severity-medium {
+            background: rgba(88, 166, 255, 0.2);
+            color: var(--accent-primary);
+            border: 1px solid var(--accent-primary);
+        }
+
+        .severity-low {
+            background: rgba(63, 185, 80, 0.2);
+            color: var(--accent-success);
+            border: 1px solid var(--accent-success);
+        }
+
+        .finding-description {
+            font-size: 12px;
+            color: var(--text-secondary);
+            line-height: 1.6;
+            margin-bottom: 0.75rem;
+        }
+
+        .finding-meta {
+            display: flex;
+            gap: 1.5rem;
+            font-size: 11px;
+            color: var(--text-muted);
+            flex-wrap: wrap;
+        }
+
+        .finding-meta span {
+            display: flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        /* Risk Meter */
+        .risk-meter-container {
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .risk-circle {
+            width: 200px;
+            height: 200px;
+            position: relative;
+            margin-bottom: 2rem;
+        }
+
+        .risk-circle svg {
+            transform: rotate(-90deg);
+        }
+
+        .risk-circle circle {
+            fill: none;
+            stroke-width: 14;
+        }
+
+        .risk-bg {
+            stroke: var(--bg-tertiary);
+        }
+
+        .risk-progress {
+            stroke: url(#riskGradient);
+            stroke-dasharray: 565;
+            stroke-dashoffset: 141;
+            stroke-linecap: round;
+            animation: drawRisk 2s ease-out;
+        }
+
+        @keyframes drawRisk {
+            from { stroke-dashoffset: 565; }
+        }
+
+        .risk-score-display {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+        }
+
+        .risk-score-value {
+            font-size: 56px;
+            font-weight: 700;
+            font-family: 'Space Grotesk', sans-serif;
+            line-height: 1;
+            background: linear-gradient(135deg, var(--accent-danger), var(--accent-warning));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .risk-score-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-top: 0.5rem;
+        }
+
+        .risk-explanation {
+            text-align: center;
+            padding: 1.5rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            font-size: 12px;
+            line-height: 1.8;
+            color: var(--text-secondary);
+        }
+
+        .risk-explanation strong {
+            color: var(--text-primary);
+        }
+
+        /* Compliance Scores */
+        .compliance-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .compliance-item {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            padding: 1.25rem;
+        }
+
+        .compliance-name {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.75rem;
+        }
+
+        .compliance-score {
+            font-size: 32px;
+            font-weight: 700;
+            font-family: 'Space Grotesk', sans-serif;
+            color: var(--accent-success);
+            margin-bottom: 0.75rem;
+        }
+
+        .compliance-bar {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+
+        .compliance-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--accent-primary), var(--accent-success));
+            border-radius: 3px;
+            transition: width 1s ease;
+        }
+
+        .compliance-description {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 0.5rem;
+        }
+
+        /* Tabbed Content */
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border-primary);
+        }
+
+        .tab {
+            padding: 0.75rem 1.25rem;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .tab.active {
+            color: var(--accent-primary);
+            border-bottom-color: var(--accent-primary);
+        }
+
+        .tab:hover:not(.active) {
+            color: var(--text-primary);
+        }
+
+        .tab-content {
+            display: none;
+        }
+
+        .tab-content.active {
+            display: block;
+        }
+
+        /* Terminal */
+        .terminal {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-primary);
+            border-radius: 8px;
+            padding: 1.5rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 12px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .terminal-line {
+            margin-bottom: 0.5rem;
+            animation: fadeIn 0.5s ease;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-5px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .terminal-prompt { color: var(--accent-primary); }
+        .terminal-success { color: var(--accent-success); }
+        .terminal-error { color: var(--accent-danger); }
+        .terminal-warning { color: var(--accent-warning); }
+
+        /* Action Button */
+        .action-button {
+            background: linear-gradient(135deg, var(--accent-primary), var(--accent-success));
+            color: var(--bg-primary);
+            border: none;
+            padding: 0.875rem 2rem;
+            border-radius: 8px;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 13px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 16px rgba(88, 166, 255, 0.3);
+        }
+
+        .action-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 24px rgba(88, 166, 255, 0.5);
+        }
+
+        .action-button:active {
+            transform: translateY(0);
+        }
+
+        /* Legend */
+        .legend {
+            display: flex;
+            gap: 2rem;
+            flex-wrap: wrap;
+            margin-top: 1.5rem;
+            padding: 1rem;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 11px;
+            color: var(--text-secondary);
+        }
+
+        .legend-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 3px;
+        }
+
+        /* Tooltips */
+        .tooltip {
+            position: relative;
+            display: inline-block;
+        }
+
+        .tooltip .tooltiptext {
+            visibility: hidden;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-primary);
+            color: var(--text-primary);
+            text-align: left;
+            border-radius: 8px;
+            padding: 1rem;
+            position: absolute;
+            z-index: 1000;
+            bottom: 125%;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 300px;
+            font-size: 11px;
+            line-height: 1.6;
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+
+        .tooltip:hover .tooltiptext {
+            visibility: visible;
+            opacity: 1;
+        }
+
+        /* Responsive */
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        @media (max-width: 768px) {
+            .stats-grid,
+            .compliance-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .container {
+                padding: 1rem;
+            }
+        }
+
+        /* Loading Animation */
+        .skeleton {
+            background: linear-gradient(90deg, var(--bg-secondary) 25%, var(--bg-tertiary) 50%, var(--bg-secondary) 75%);
+            background-size: 200% 100%;
+            animation: loading 1.5s ease-in-out infinite;
+        }
+
+        @keyframes loading {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="branding">
+                <div class="logo">KG</div>
+                <div class="title-group">
+                    <h1>KubeGuard Sentinel</h1>
+                    <p class="subtitle">Interactive Security Dashboard • Real-time Kubernetes Vulnerability Detection</p>
+                </div>
+            </div>
+            
+            <div class="info-banner">
+                <h3>🛡️ What is KubeGuard Sentinel?</h3>
+                <p>
+                    <strong>KubeGuard Sentinel</strong> is an ethical Kubernetes security testing framework that automatically scans your clusters for vulnerabilities. 
+                    It tests for <strong>privilege escalation</strong>, <strong>service account abuse</strong>, <strong>pod breakout scenarios</strong>, 
+                    <strong>network policy gaps</strong>, and <strong>cloud workload identity misconfigurations</strong>. 
+                    Each finding is scored using <strong>CVSS methodology</strong> and mapped to compliance frameworks like 
+                    <strong>CIS Kubernetes</strong>, <strong>PCI-DSS</strong>, <strong>NIST 800-190</strong>, and <strong>SOC 2</strong>.
+                </p>
+            </div>
+        </header>
+
+        <!-- Stats Overview -->
+        <section>
+            <div class="section-header">
+                <h2 class="section-title">
+                    📊 Scan Overview
+                    <div class="tooltip">
+                        <span class="help-icon">?</span>
+                        <span class="tooltiptext">
+                            <strong>Understanding Your Security Posture</strong><br><br>
+                            This dashboard shows the results of automated security scans across your Kubernetes cluster. 
+                            Each metric represents different security concerns that should be addressed based on severity.
+                        </span>
+                    </div>
+                </h2>
+                <button class="action-button" onclick="runNewScan()">▶ Run New Scan</button>
+            </div>
+
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Findings</div>
+                    <div class="stat-value" style="color: var(--accent-primary);">18</div>
+                    <div class="stat-description">
+                        Security issues discovered across all namespaces in this scan
+                    </div>
+                    <span class="stat-trend trend-down">↓ 3 fewer than last week</span>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Critical Issues</div>
+                    <div class="stat-value" style="color: var(--accent-danger);">3</div>
+                    <div class="stat-description">
+                        Issues that could lead to complete cluster compromise - immediate action required
+                    </div>
+                    <span class="stat-trend trend-up">↑ 1 new critical finding</span>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Overall Risk Score</div>
+                    <div class="stat-value" style="color: var(--accent-warning);">6.8</div>
+                    <div class="stat-description">
+                        CVSS-based risk calculation (0-10 scale) - currently HIGH risk level
+                    </div>
+                    <span class="stat-trend trend-down">↓ 0.5 improvement</span>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-label">Scanned Namespaces</div>
+                    <div class="stat-value" style="color: var(--accent-success);">12</div>
+                    <div class="stat-description">
+                        Successfully scanned across production, staging, and development environments
+                    </div>
+                    <span class="stat-trend trend-down">✓ All scanned</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content Area -->
+        <div class="main-grid">
+            <!-- Security Findings -->
+            <div class="card">
+                <div class="section-header">
+                    <h2 class="section-title">
+                        🔍 Security Findings
+                        <div class="tooltip">
+                            <span class="help-icon">?</span>
+                            <span class="tooltiptext">
+                                <strong>How to Read These Findings</strong><br><br>
+                                Each finding represents a specific security vulnerability. The color bar on the left indicates severity:
+                                <br><br>
+                                🔴 Critical (9.0-10.0 CVSS) - Fix immediately<br>
+                                🟠 High (7.0-8.9 CVSS) - Fix this week<br>
+                                🔵 Medium (4.0-6.9 CVSS) - Next sprint<br>
+                                🟢 Low (0.1-3.9 CVSS) - Routine hardening
+                            </span>
+                        </div>
+                    </h2>
+                </div>
+
+                <div class="findings-list">
+                    <div class="finding-item critical" onclick="showFindingDetails(1)">
+                        <div class="finding-header">
+                            <div class="finding-title">Service Account with cluster-admin privileges</div>
+                            <span class="severity-badge severity-critical">Critical</span>
+                        </div>
+                        <div class="finding-description">
+                            The service account <code>production/jenkins-sa</code> has been granted cluster-admin role binding, 
+                            providing unrestricted access to all cluster resources. This violates the principle of least privilege 
+                            and could enable complete cluster compromise if the service account token is compromised.
+                        </div>
+                        <div class="finding-meta">
+                            <span>📍 Namespace: production</span>
+                            <span>🎯 CVSS Score: 9.8</span>
+                            <span>⏱️ Detected: 5 minutes ago</span>
+                            <span>📋 CIS 5.1.5</span>
+                        </div>
+                    </div>
+
+                    <div class="finding-item critical" onclick="showFindingDetails(2)">
+                        <div class="finding-header">
+                            <div class="finding-title">Privileged pod running in production</div>
+                            <span class="severity-badge severity-critical">Critical</span>
+                        </div>
+                        <div class="finding-description">
+                            Pod <code>production/database-primary</code> is running with <code>privileged: true</code> security context. 
+                            Privileged containers can access all devices on the host and bypass most security mechanisms, 
+                            enabling potential container escape and host compromise.
+                        </div>
+                        <div class="finding-meta">
+                            <span>📍 Namespace: production</span>
+                            <span>🎯 CVSS Score: 9.0</span>
+                            <span>⏱️ Detected: 8 minutes ago</span>
+                            <span>📋 CIS 5.2.1</span>
+                        </div>
+                    </div>
+
+                    <div class="finding-item critical" onclick="showFindingDetails(3)">
+                        <div class="finding-header">
+                            <div class="finding-title">Docker socket mounted in container</div>
+                            <span class="severity-badge severity-critical">Critical</span>
+                        </div>
+                        <div class="finding-description">
+                            Container in pod <code>ci-cd/jenkins-worker</code> has <code>/var/run/docker.sock</code> mounted from the host. 
+                            This grants the container full Docker daemon access, enabling arbitrary container creation, 
+                            privilege escalation, and complete cluster takeover.
+                        </div>
+                        <div class="finding-meta">
+                            <span>📍 Namespace: ci-cd</span>
+                            <span>🎯 CVSS Score: 10.0</span>
+                            <span>⏱️ Detected: 12 minutes ago</span>
+                            <span>📋 CIS 5.2.6</span>
+                        </div>
+                    </div>
+
+                    <div class="finding-item high" onclick="showFindingDetails(4)">
+                        <div class="finding-header">
+                            <div class="finding-title">Container with SYS_ADMIN capability</div>
+                            <span class="severity-badge severity-high">High</span>
+                        </div>
+                        <div class="finding-description">
+                            Container <code>monitoring/prometheus-server</code> has the SYS_ADMIN Linux capability, 
+                            which grants extensive kernel-level privileges including the ability to mount filesystems, 
+                            load kernel modules, and bypass many security restrictions.
+                        </div>
+                        <div class="finding-meta">
+                            <span>📍 Namespace: monitoring</span>
+                            <span>🎯 CVSS Score: 8.5</span>
+                            <span>⏱️ Detected: 15 minutes ago</span>
+                            <span>📋 CIS 5.2.8</span>
+                        </div>
+                    </div>
+
+                    <div class="finding-item high" onclick="showFindingDetails(5)">
+                        <div class="finding-header">
+                            <div class="finding-title">No network policies in production namespace</div>
+                            <span class="severity-badge severity-high">High</span>
+                        </div>
+                        <div class="finding-description">
+                            The production namespace lacks NetworkPolicy resources, allowing unrestricted pod-to-pod communication. 
+                            This violates zero-trust principles and could enable lateral movement in case of pod compromise.
+                        </div>
+                        <div class="finding-meta">
+                            <span>📍 Namespace: production</span>
+                            <span>🎯 CVSS Score: 7.0</span>
+                            <span>⏱️ Detected: 20 minutes ago</span>
+                            <span>📋 CIS 5.3.2</span>
+                        </div>
+                    </div>
+
+                    <div class="finding-item medium" onclick="showFindingDetails(6)">
+                        <div class="finding-header">
+                            <div class="finding-title">15 pods using default service account</div>
+                            <span class="severity-badge severity-medium">Medium</span>
+                        </div>
+                        <div class="finding-description">
+                            Multiple pods across different namespaces are using the default service account instead of 
+                            dedicated service accounts. This makes it difficult to enforce granular RBAC policies and 
+                            increases the blast radius of potential compromises.
+                        </div>
+                        <div class="finding-meta">
+                            <span>📍 Multiple namespaces</span>
+                            <span>🎯 CVSS Score: 5.0</span>
+                            <span>⏱️ Detected: 18 minutes ago</span>
+                            <span>📋 CIS 5.1.6</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="legend">
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--accent-danger);"></div>
+                        <span>Critical: Immediate fix required</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--accent-warning);"></div>
+                        <span>High: Fix within 1 week</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--accent-primary);"></div>
+                        <span>Medium: Next sprint</span>
+                    </div>
+                    <div class="legend-item">
+                        <div class="legend-dot" style="background: var(--accent-success);"></div>
+                        <span>Low: Routine hardening</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Side Panel -->
+            <div style="display: flex; flex-direction: column; gap: 2rem;">
+                <!-- Risk Score -->
+                <div class="card">
+                    <div class="section-header">
+                        <h2 class="section-title">
+                            🎯 Risk Score
+                            <div class="tooltip">
+                                <span class="help-icon">?</span>
+                                <span class="tooltiptext">
+                                    <strong>How Risk Score is Calculated</strong><br><br>
+                                    The overall risk score uses a weighted average of all findings based on their CVSS scores:
+                                    <br><br>
+                                    • Critical (10.0 weight)<br>
+                                    • High (7.0 weight)<br>
+                                    • Medium (4.0 weight)<br>
+                                    • Low (1.0 weight)<br><br>
+                                    Score = (Weighted Sum) / (Max Possible) × 10
+                                </span>
+                            </div>
+                        </h2>
+                    </div>
+
+                    <div class="risk-meter-container">
+                        <div class="risk-circle">
+                            <svg width="200" height="200">
+                                <defs>
+                                    <linearGradient id="riskGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                        <stop offset="0%" style="stop-color:#f85149;stop-opacity:1" />
+                                        <stop offset="100%" style="stop-color:#d29922;stop-opacity:1" />
+                                    </linearGradient>
+                                </defs>
+                                <circle class="risk-bg" cx="100" cy="100" r="90" />
+                                <circle class="risk-progress" cx="100" cy="100" r="90" />
+                            </svg>
+                            <div class="risk-score-display">
+                                <div class="risk-score-value">6.8</div>
+                                <div class="risk-score-label">High Risk</div>
+                            </div>
+                        </div>
+
+                        <div class="risk-explanation">
+                            <strong>Current Risk Level: HIGH</strong><br><br>
+                            Your cluster has significant security vulnerabilities that require prompt attention. 
+                            With 3 critical findings and an overall score of 6.8/10, immediate remediation is 
+                            recommended to prevent potential exploitation.
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compliance Scores -->
+                <div class="card">
+                    <div class="section-header">
+                        <h2 class="section-title">
+                            ✅ Compliance Scores
+                            <div class="tooltip">
+                                <span class="help-icon">?</span>
+                                <span class="tooltiptext">
+                                    <strong>Compliance Framework Mapping</strong><br><br>
+                                    Each finding is automatically mapped to relevant compliance controls:
+                                    <br><br>
+                                    • CIS Kubernetes Benchmark<br>
+                                    • PCI-DSS Requirements<br>
+                                    • NIST 800-190 Guidelines<br>
+                                    • SOC 2 Type II Controls<br><br>
+                                    Scores show % of controls passing.
+                                </span>
+                            </div>
+                        </h2>
+                    </div>
+
+                    <div class="compliance-grid">
+                        <div class="compliance-item">
+                            <div class="compliance-name">CIS Kubernetes</div>
+                            <div class="compliance-score">82%</div>
+                            <div class="compliance-bar">
+                                <div class="compliance-fill" style="width: 82%;"></div>
+                            </div>
+                            <div class="compliance-description">Industry baseline security controls</div>
+                        </div>
+                        
+                        <div class="compliance-item">
+                            <div class="compliance-name">PCI-DSS</div>
+                            <div class="compliance-score">76%</div>
+                            <div class="compliance-bar">
+                                <div class="compliance-fill" style="width: 76%;"></div>
+                            </div>
+                            <div class="compliance-description">Payment card data security</div>
+                        </div>
+                        
+                        <div class="compliance-item">
+                            <div class="compliance-name">NIST 800-190</div>
+                            <div class="compliance-score">79%</div>
+                            <div class="compliance-bar">
+                                <div class="compliance-fill" style="width: 79%;"></div>
+                            </div>
+                            <div class="compliance-description">Container security guidelines</div>
+                        </div>
+                        
+                        <div class="compliance-item">
+                            <div class="compliance-name">SOC 2 Type II</div>
+                            <div class="compliance-score">85%</div>
+                            <div class="compliance-bar">
+                                <div class="compliance-fill" style="width: 85%;"></div>
+                            </div>
+                            <div class="compliance-description">Service organization controls</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tabbed Content -->
+        <div class="card">
+            <div class="tabs">
+                <button class="tab active" onclick="switchTab(event, 'terminal')">Live Scan Output</button>
+                <button class="tab" onclick="switchTab(event, 'recommendations')">Recommendations</button>
+                <button class="tab" onclick="switchTab(event, 'about')">About This Tool</button>
+            </div>
+
+            <div id="terminal" class="tab-content active">
+                <div class="terminal">
+                    <div class="terminal-line"><span class="terminal-prompt">$</span> kubeguard scan --profile standard --namespace production</div>
+                    <div class="terminal-line terminal-success">✓ Authorization verified: SEC-2024-001</div>
+                    <div class="terminal-line terminal-success">✓ Discovering cluster assets...</div>
+                    <div class="terminal-line">  └─ Found 12 namespaces, 156 pods, 42 service accounts</div>
+                    <div class="terminal-line terminal-success">✓ Testing privilege escalation vectors...</div>
+                    <div class="terminal-line terminal-error">  ✗ CRITICAL: ServiceAccount with cluster-admin detected</div>
+                    <div class="terminal-line terminal-error">  ✗ CRITICAL: Privileged pod in production namespace</div>
+                    <div class="terminal-line terminal-success">✓ Testing service account abuse...</div>
+                    <div class="terminal-line terminal-warning">  ⚠ MEDIUM: 15 pods using default service account</div>
+                    <div class="terminal-line terminal-success">✓ Testing pod breakout scenarios...</div>
+                    <div class="terminal-line terminal-error">  ✗ CRITICAL: Docker socket mounted in ci-cd/jenkins</div>
+                    <div class="terminal-line terminal-warning">  ⚠ HIGH: Container with SYS_ADMIN capability</div>
+                    <div class="terminal-line terminal-success">✓ Validating network policies...</div>
+                    <div class="terminal-line terminal-error">  ✗ HIGH: No network policies in production namespace</div>
+                    <div class="terminal-line terminal-success">✓ Testing cloud workload identity...</div>
+                    <div class="terminal-line">  └─ IRSA configuration reviewed</div>
+                    <div class="terminal-line"></div>
+                    <div class="terminal-line terminal-success">✓ Scan complete! Overall risk score: 6.8/10.0 (HIGH)</div>
+                    <div class="terminal-line">  └─ 18 findings: 3 critical, 5 high, 7 medium, 3 low</div>
+                    <div class="terminal-line">  └─ Reports saved to /results/scan-2024-02-16.json</div>
+                </div>
+            </div>
+
+            <div id="recommendations" class="tab-content">
+                <div style="padding: 1rem; line-height: 1.8; color: var(--text-secondary);">
+                    <h3 style="color: var(--text-primary); margin-bottom: 1rem;">🎯 Priority Actions</h3>
+                    
+                    <h4 style="color: var(--accent-danger); margin-top: 1.5rem; margin-bottom: 0.5rem;">🔴 Critical (Fix Immediately)</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Remove cluster-admin role binding from production/jenkins-sa - create specific role with only required permissions</li>
+                        <li>Remove Docker socket mount from ci-cd/jenkins-worker - use Kubernetes-native build methods (Kaniko, BuildKit)</li>
+                        <li>Disable privileged mode on production/database-primary - use specific capabilities if needed</li>
+                    </ul>
+
+                    <h4 style="color: var(--accent-warning); margin-top: 1.5rem; margin-bottom: 0.5rem;">🟠 High (Fix This Week)</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Implement network policies for production namespace with default-deny ingress/egress</li>
+                        <li>Remove SYS_ADMIN capability from monitoring/prometheus-server - review if truly necessary</li>
+                        <li>Enable Pod Security Standards (restricted profile) for all namespaces</li>
+                    </ul>
+
+                    <h4 style="color: var(--accent-primary); margin-top: 1.5rem; margin-bottom: 0.5rem;">🔵 Medium (Next Sprint)</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Create dedicated service accounts for all applications - eliminate default SA usage</li>
+                        <li>Set automountServiceAccountToken: false globally, enable only where needed</li>
+                        <li>Implement resource quotas and limit ranges in all namespaces</li>
+                    </ul>
+
+                    <h4 style="color: var(--text-primary); margin-top: 1.5rem; margin-bottom: 0.5rem;">📚 Long-term Improvements</h4>
+                    <ul style="margin-left: 1.5rem;">
+                        <li>Schedule weekly automated security scans</li>
+                        <li>Integrate scan results with CI/CD pipeline</li>
+                        <li>Implement OPA/Gatekeeper policies to prevent future violations</li>
+                        <li>Set up alerting for new critical/high findings</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div id="about" class="tab-content">
+                <div style="padding: 1rem; line-height: 1.8; color: var(--text-secondary);">
+                    <h3 style="color: var(--text-primary); margin-bottom: 1rem;">🛡️ About KubeGuard Sentinel</h3>
+                    
+                    <p style="margin-bottom: 1rem;">
+                        KubeGuard Sentinel is an <strong style="color: var(--text-primary);">open-source Kubernetes security testing framework</strong> 
+                        designed to help organizations proactively identify and remediate security vulnerabilities before they can be exploited.
+                    </p>
+
+                    <h4 style="color: var(--text-primary); margin-top: 1.5rem; margin-bottom: 0.5rem;">🔍 What It Tests</h4>
+                    <ul style="margin-left: 1.5rem; margin-bottom: 1rem;">
+                        <li><strong>Privilege Escalation:</strong> Cluster-admin bindings, dangerous capabilities, RBAC misconfigurations</li>
+                        <li><strong>Service Account Abuse:</strong> Default SA usage, token extraction vulnerabilities, cross-namespace access</li>
+                        <li><strong>Pod Breakout:</strong> Privileged containers, host mounts, Docker socket exposure, host namespace usage</li>
+                        <li><strong>Network Policies:</strong> Missing policies, default-deny enforcement, egress restrictions</li>
+                        <li><strong>Cloud Identity:</strong> AWS IRSA, GCP Workload Identity, Azure Pod Identity misconfigurations</li>
+                    </ul>
+
+                    <h4 style="color: var(--text-primary); margin-top: 1.5rem; margin-bottom: 0.5rem;">⚖️ Ethical Framework</h4>
+                    <p style="margin-bottom: 1rem;">
+                        KubeGuard Sentinel is built with <strong style="color: var(--text-primary);">ethics first</strong>:
+                    </p>
+                    <ul style="margin-left: 1.5rem; margin-bottom: 1rem;">
+                        <li>Mandatory authorization required for all scans</li>
+                        <li>Comprehensive audit logging of all activities</li>
+                        <li>Dry-run mode by default to prevent accidental changes</li>
+                        <li>Namespace exclusions to protect critical systems</li>
+                        <li>Time-based authorization expiry for access control</li>
+                    </ul>
+
+                    <h4 style="color: var(--text-primary); margin-top: 1.5rem; margin-bottom: 0.5rem;">📊 Deployment Options</h4>
+                    <ul style="margin-left: 1.5rem; margin-bottom: 1rem;">
+                        <li><strong>Helm Charts:</strong> Full Kubernetes deployment with CRDs, scheduled scans, and persistent storage</li>
+                        <li><strong>Terraform Modules:</strong> Infrastructure-as-Code deployment for AWS/GCP/Azure with IRSA/Workload Identity</li>
+                        <li><strong>Python Agent:</strong> Standalone CLI tool for CI/CD integration and one-off scans</li>
+                        <li><strong>GitLab CI/CD:</strong> Automated pipeline integration with Terraform and Sentinel policies</li>
+                    </ul>
+
+                    <h4 style="color: var(--text-primary); margin-top: 1.5rem; margin-bottom: 0.5rem;">📧 Contact & Contribution</h4>
+                    <p style="margin-bottom: 0.5rem;">
+                        <strong>Author:</strong> Tyler Joyner<br>
+                        <strong>Email:</strong> <a href="mailto:joynertyler75@gmail.com" style="color: var(--accent-primary);">joynertyler75@gmail.com</a><br>
+                        <strong>GitHub:</strong> <a href="https://github.com/joynerty/kubeguard-sentinel" style="color: var(--accent-primary);">github.com/joynerty/kubeguard-sentinel</a><br>
+                        <strong>License:</strong> Apache 2.0
+                    </p>
+                </div>
+            </div>
+        </div>
+
+        <footer style="margin-top: 3rem; padding-top: 2rem; border-top: 1px solid var(--border-primary); text-align: center; color: var(--text-muted); font-size: 12px;">
+            <p>KubeGuard Sentinel v1.0.0 • Built with ❤️ for the Kubernetes security community</p>
+            <p style="margin-top: 0.5rem;">
+                <a href="https://github.com/joynerty/kubeguard-sentinel" style="color: var(--accent-primary); text-decoration: none;">GitHub</a> • 
+                <a href="mailto:joynertyler75@gmail.com" style="color: var(--accent-primary); text-decoration: none;">Contact</a> • 
+                <a href="#" style="color: var(--accent-primary); text-decoration: none;">Documentation</a>
+            </p>
+        </footer>
+    </div>
+
+    <script>
+        function switchTab(event, tabId) {
+            // Hide all tab content
+            document.querySelectorAll('.tab-content').forEach(content => {
+                content.classList.remove('active');
+            });
+            
+            // Remove active class from all tabs
+            document.querySelectorAll('.tab').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            
+            // Show selected tab content
+            document.getElementById(tabId).classList.add('active');
+            event.currentTarget.classList.add('active');
+        }
+
+        function runNewScan() {
+            const terminal = document.getElementById('terminal').querySelector('.terminal');
+            terminal.innerHTML = '<div class="terminal-line"><span class="terminal-prompt">$</span> Starting new security scan...</div>';
+            
+            const messages = [
+                { text: '✓ Initializing KubeGuard Sentinel v1.0.0', type: 'success', delay: 500 },
+                { text: '✓ Authorization validated: SEC-2024-002', type: 'success', delay: 1000 },
+                { text: '✓ Connecting to cluster: production-eks', type: 'success', delay: 1500 },
+                { text: '  └─ Discovering namespaces...', type: 'normal', delay: 2000 },
+                { text: '  └─ Found 12 namespaces for scanning', type: 'normal', delay: 2500 },
+                { text: '✓ Enumerating resources...', type: 'success', delay: 3000 },
+                { text: '  └─ 156 pods, 42 service accounts, 89 role bindings', type: 'normal', delay: 3500 },
+                { text: '✓ Running security tests...', type: 'success', delay: 4000 },
+                { text: '⚠ Analyzing findings...', type: 'warning', delay: 4500 },
+                { text: '✓ Calculating risk scores...', type: 'success', delay: 5000 },
+                { text: '✓ Mapping to compliance frameworks...', type: 'success', delay: 5500 },
+                { text: '✓ Scan complete! Check findings above.', type: 'success', delay: 6000 }
+            ];
+
+            messages.forEach(msg => {
+                setTimeout(() => {
+                    const line = document.createElement('div');
+                    line.className = `terminal-line terminal-${msg.type}`;
+                    line.textContent = msg.text;
+                    terminal.appendChild(line);
+                    terminal.scrollTop = terminal.scrollHeight;
+                }, msg.delay);
+            });
+        }
+
+        function showFindingDetails(id) {
+            alert(`📋 Finding Detail View\n\nIn a production deployment, this would open a modal with:\n\n• Complete vulnerability description\n• Full technical details and evidence\n• Step-by-step remediation guide\n• Related CIS Benchmark controls\n• Sample configuration fixes\n• Links to documentation\n\nClick OK to continue exploring the dashboard.`);
+        }
+
+        // Animate risk score on load
+        window.addEventListener('load', () => {
+            // Animate stat counters
+            document.querySelectorAll('.stat-value').forEach(stat => {
+                const value = parseFloat(stat.textContent);
+                let current = 0;
+                const increment = value / 40;
+                const timer = setInterval(() => {
+                    current += increment;
+                    if (current >= value) {
+                        stat.textContent = value % 1 === 0 ? value : value.toFixed(1);
+                        clearInterval(timer);
+                    } else {
+                        stat.textContent = value % 1 === 0 ? Math.floor(current) : current.toFixed(1);
+                    }
+                }, 30);
+            });
+        });
+    </script>
+</body>
+</html>
